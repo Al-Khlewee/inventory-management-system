@@ -19,14 +19,46 @@ export interface MedicalDevice {
   CommissioningDate: string | null;
   DeviceStatus: string | null;
   ReceiptFormNumber: string | null;
-  ImageUrls: string[] | null; // Added image URLs array to store multiple images
+  ImageUrls: string[] | null;
 }
 
+// Helper to determine if we're in a Vercel production environment
+const isVercelProduction = process.env.VERCEL === '1';
+
+// In-memory store for production use on Vercel
+let inMemoryDevices: MedicalDevice[] | null = null;
+
 export function getMedicalDevices(): MedicalDevice[] {
-  const filePath = path.join(process.cwd(), '..', 'MDDB.json');
+  // For Vercel production environment, use in-memory storage or fetch from database/API
+  if (isVercelProduction) {
+    // Return in-memory data if available
+    if (inMemoryDevices) return [...inMemoryDevices];
+    
+    // For initial load, use a starter dataset or empty array
+    // In a real production app, you would fetch from a database here
+    inMemoryDevices = [];
+    return inMemoryDevices;
+  }
+  
+  // For local development, continue using the local JSON file
   try {
-    const jsonData = fs.readFileSync(filePath, 'utf8');
-    return JSON.parse(jsonData);
+    // Use a path within the project for better compatibility
+    const filePath = path.join(process.cwd(), 'MDDB.json');
+    
+    // If the file doesn't exist in the standard location, try with ../ path
+    if (!fs.existsSync(filePath)) {
+      const altFilePath = path.join(process.cwd(), '..', 'MDDB.json');
+      if (fs.existsSync(altFilePath)) {
+        const jsonData = fs.readFileSync(altFilePath, 'utf8');
+        return JSON.parse(jsonData);
+      }
+    } else {
+      const jsonData = fs.readFileSync(filePath, 'utf8');
+      return JSON.parse(jsonData);
+    }
+    
+    console.error('Medical devices data file not found');
+    return [];
   } catch (error) {
     console.error('Error loading medical devices data:', error);
     return [];
@@ -73,13 +105,33 @@ export function getManufacturers(): string[] {
 }
 
 export function saveMedicalDevices(devices: MedicalDevice[]): boolean {
-  const filePath = path.join(process.cwd(), '..', 'MDDB.json');
+  // For Vercel production environment, use in-memory storage
+  if (isVercelProduction) {
+    try {
+      inMemoryDevices = [...devices];
+      return true;
+    } catch (error) {
+      console.error('Error saving medical devices data in memory:', error);
+      return false;
+    }
+  }
+  
+  // For local development, continue using the local JSON file
   try {
+    // Try to save to the standard location first
+    const filePath = path.join(process.cwd(), 'MDDB.json');
     fs.writeFileSync(filePath, JSON.stringify(devices, null, 2), 'utf8');
     return true;
   } catch (error) {
-    console.error('Error saving medical devices data:', error);
-    return false;
+    try {
+      // If that fails, try to save to the parent directory
+      const altFilePath = path.join(process.cwd(), '..', 'MDDB.json');
+      fs.writeFileSync(altFilePath, JSON.stringify(devices, null, 2), 'utf8');
+      return true;
+    } catch (innerError) {
+      console.error('Error saving medical devices data:', innerError);
+      return false;
+    }
   }
 }
 
